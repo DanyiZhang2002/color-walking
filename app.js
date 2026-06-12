@@ -22,9 +22,14 @@ let colorIndex = 0;
 let pollTimer = null;
 const COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf','#ff8b94','#b4a7d6','#ffb347','#87ceeb'];
 
-// Random anonymous name per session
-const ANON_NAMES = ['🌸小花','🌈彩虹','🦋蝴蝶','🌙月亮','⭐星星','🍀幸运草','🎨画家','🌊海浪','🌺玫瑰','🦊小狐'];
-const nickname = localStorage.getItem('cw_nick') || ANON_NAMES[Math.floor(Math.random() * ANON_NAMES.length)];
+// Unique nickname per device — emoji + 4位随机字符，存本地不重复
+const EMOJIS = ['🌸','🌈','🦋','🌙','⭐','🍀','🎨','🌊','🌺','🦊','🐬','🦄','🍭','🎸','🌵','🐧','🦋','🍄','🎯','🚀'];
+function genNick() {
+  const emoji = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+  const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+  return emoji + suffix;
+}
+const nickname = localStorage.getItem('cw_nick') || genNick();
 localStorage.setItem('cw_nick', nickname);
 
 // ============================================================
