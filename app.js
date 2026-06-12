@@ -276,22 +276,20 @@ function renderWall() {
     grid.innerHTML = '<div class="wall-empty">还没有照片，快去上传吧！📸</div>';
     return;
   }
-  grid.innerHTML = allPhotos.map(p => `
-    <div class="wall-item" onclick='openPhoto(${JSON.stringify(p)})'>
+  // 按时间最新到最旧排列
+  const sorted = [...allPhotos].sort((a, b) => b.id - a.id);
+  grid.innerHTML = sorted.map(p => {
+    const likeCount = (p.likes || []).length;
+    const commentCount = (p.comments || []).length;
+    return `<div class="wall-item" onclick='openPhoto(${JSON.stringify(p)})'>
       <img src="${p.url}" loading="lazy" alt=""/>
       <div class="wall-item-info">
         <span class="wall-author" style="color:${getUserColor(p.author)}">${p.author}</span>
         <span class="wall-desc">${p.desc || ''}</span>
+        <div class="wall-stats">${likeCount > 0 ? `❤️ ${likeCount}` : ''} ${commentCount > 0 ? `💬 ${commentCount}` : ''}</div>
       </div>
-    </div>
-  `).join('');
-}
-
-function generateWall() {
-  renderWall();
-  const btn = document.querySelector('.btn-gen-wall');
-  btn.textContent = '✅ 已生成！';
-  setTimeout(() => btn.textContent = '✨ 生成照片墙', 2000);
+    </div>`;
+  }).join('');
 }
 
 function openPhoto(photo) {
@@ -372,11 +370,7 @@ function showPage(name) {
   if (name === 'wall') { tabs[1].classList.add('active'); renderWall(); }
 }
 
-// Auto wall at 23:00
-setInterval(() => {
-  const now = new Date();
-  if (now.getHours() === 23 && now.getMinutes() === 0) generateWall();
-}, 60000);
+// Wall updates in real-time via loadPhotos polling
 
 // ============================================================
 // Chat
