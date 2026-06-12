@@ -1,8 +1,8 @@
 // ============================================================
-// Config — 所有人共享同一个Bin
+// Config
 // ============================================================
 const JSONBIN_KEY = '$2a$10$QBi9BI/.1Np6zFQ1Mde./.G1S1QLi.auetF.iFlXyNpCi.Ib3jDaO';
-const SHARED_BIN = '6a2bedb5f5f4af5e29e5db66'; // 共享数据库
+const SHARED_BIN = '6a2bedb5f5f4af5e29e5db66';
 const CLOUDINARY_CLOUD = 'dxftvseub';
 const CLOUDINARY_PRESET = 'color_walking';
 const JSONBIN_API = 'https://api.jsonbin.io/v3';
@@ -18,41 +18,21 @@ let manualLat = null, manualLng = null;
 let markers = [];
 let userColors = {};
 let colorIndex = 0;
-let nickname = null;
 let pollTimer = null;
 const COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf','#ff8b94','#b4a7d6','#ffb347','#87ceeb'];
 
-// ============================================================
-// Enter App
-// ============================================================
-function enterApp() {
-  const nick = document.getElementById('input-nickname').value.trim();
-  if (!nick) { alert('请先输入你的昵称！'); return; }
-  nickname = nick;
-  localStorage.setItem('cw_nick', nickname);
+// Random anonymous name per session
+const ANON_NAMES = ['🌸小花','🌈彩虹','🦋蝴蝶','🌙月亮','⭐星星','🍀幸运草','🎨画家','🌊海浪','🌺玫瑰','🦊小狐'];
+const nickname = localStorage.getItem('cw_nick') || ANON_NAMES[Math.floor(Math.random() * ANON_NAMES.length)];
+localStorage.setItem('cw_nick', nickname);
 
-  document.getElementById('room-gate').classList.add('hidden');
-  document.getElementById('main-app').classList.remove('hidden');
-  document.getElementById('header-nick').textContent = `👋 ${nickname}`;
-
+// ============================================================
+// Init
+// ============================================================
+window.addEventListener('DOMContentLoaded', () => {
   initMap();
   loadPhotos();
   startPolling();
-}
-
-// Auto-resume
-window.addEventListener('DOMContentLoaded', () => {
-  const savedNick = localStorage.getItem('cw_nick');
-  if (savedNick) {
-    nickname = savedNick;
-    document.getElementById('input-nickname').value = savedNick;
-    document.getElementById('room-gate').classList.add('hidden');
-    document.getElementById('main-app').classList.remove('hidden');
-    document.getElementById('header-nick').textContent = `👋 ${nickname}`;
-    initMap();
-    loadPhotos();
-    startPolling();
-  }
 });
 
 // ============================================================
@@ -87,10 +67,10 @@ function addMarker(photo) {
   const color = getUserColor(photo.author);
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:40px;height:40px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);transform:rotate(-45deg);cursor:pointer;overflow:hidden;">
+    html: `<div style="width:44px;height:44px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.35);transform:rotate(-45deg);cursor:pointer;overflow:hidden;">
       <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
     </div>`,
-    iconSize: [40, 40], iconAnchor: [20, 40]
+    iconSize: [44, 44], iconAnchor: [22, 44]
   });
   const marker = L.marker([photo.lat, photo.lng], { icon }).addTo(map);
   marker.on('click', () => openPhoto(photo));
@@ -114,7 +94,7 @@ async function loadPhotos() {
       headers: { 'X-Master-Key': JSONBIN_KEY }
     });
     const data = await res.json();
-    const photos = (data.record?.photos) || [];
+    const photos = data.record?.photos || [];
     if (JSON.stringify(photos) === JSON.stringify(allPhotos)) return;
     allPhotos = photos;
 
@@ -134,7 +114,7 @@ function openUpload() {
   document.getElementById('input-desc').value = '';
   document.getElementById('preview-img').classList.add('hidden');
   document.getElementById('preview-img').src = '';
-  document.getElementById('location-status').textContent = '📍 等待读取GPS...';
+  document.getElementById('location-status').textContent = '';
   document.getElementById('mini-map').classList.add('hidden');
   document.getElementById('btn-manual').classList.add('hidden');
   currentFile = null; currentLat = null; currentLng = null; manualLat = null; manualLng = null;
@@ -149,6 +129,8 @@ async function handleFile(event) {
   const file = event.target.files[0];
   if (!file) return;
   currentFile = file;
+
+  // Preview
   const reader = new FileReader();
   reader.onload = e => {
     const img = document.getElementById('preview-img');
@@ -157,24 +139,26 @@ async function handleFile(event) {
   };
   reader.readAsDataURL(file);
 
+  // Try EXIF GPS
   document.getElementById('location-status').textContent = '📍 读取GPS中...';
   try {
     const exif = await exifr.gps(file);
     if (exif && exif.latitude) {
       currentLat = exif.latitude;
       currentLng = exif.longitude;
-      document.getElementById('location-status').textContent = `✅ GPS已读取：${currentLat.toFixed(4)}, ${currentLng.toFixed(4)}`;
+      document.getElementById('location-status').textContent = `✅ 已获取位置`;
       showMiniMap(currentLat, currentLng);
       return;
     }
   } catch(e) {}
+
+  // No GPS
   document.getElementById('location-status').textContent = '📍 未找到GPS，请手动标记位置';
   document.getElementById('btn-manual').classList.remove('hidden');
 }
 
 function enableManualLocation() {
-  const el = document.getElementById('mini-map');
-  el.classList.remove('hidden');
+  document.getElementById('mini-map').classList.remove('hidden');
   document.getElementById('location-status').textContent = '📌 点击地图标记拍摄位置';
   if (!miniMap) {
     miniMap = L.map('mini-map').setView([31.2304, 121.4737], 13);
@@ -184,7 +168,7 @@ function enableManualLocation() {
       manualLat = e.latlng.lat; manualLng = e.latlng.lng;
       if (tempMarker) miniMap.removeLayer(tempMarker);
       tempMarker = L.marker([manualLat, manualLng]).addTo(miniMap);
-      document.getElementById('location-status').textContent = `✅ 已标记：${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
+      document.getElementById('location-status').textContent = `✅ 位置已标记`;
     });
   }
 }
@@ -279,7 +263,6 @@ function generateWall() {
 function openPhoto(photo) {
   if (typeof photo === 'string') photo = JSON.parse(photo);
   document.getElementById('detail-img').src = photo.url;
-  document.getElementById('detail-author').textContent = photo.author;
   document.getElementById('detail-desc').textContent = photo.desc || '';
   document.getElementById('detail-time').textContent = photo.time || '';
   document.getElementById('photo-modal').classList.remove('hidden');
