@@ -313,3 +313,16 @@ body {
   padding: 0.4rem 0.7rem; border-radius: 10px;
   cursor: pointer; font-size: 0.82rem; font-weight: 600; flex-shrink: 0;
 }
+
+/* ── Like ── */
+.detail-like-row { display: flex; align-items: center; gap: 0.8rem; margin-top: 0.6rem; }
+.btn-like {
+  background: rgba(255,107,107,0.15);
+  border: 1.5px solid rgba(255,107,107,0.4);
+  color: white; padding: 0.4rem 1rem;
+  border-radius: 20px; cursor: pointer;
+  font-size: 0.88rem; font-weight: 600;
+  transition: all 0.2s;
+}
+.btn-like:hover { background: rgba(255,107,107,0.3); border-color: #ff6b6b; }
+.like-count { font-size: 0.8rem; color: rgba(255,255,255,0.5); }
