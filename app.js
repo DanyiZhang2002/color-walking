@@ -1,7 +1,8 @@
 // ============================================================
-// Config
+// Config — 所有人共享同一个Bin
 // ============================================================
 const JSONBIN_KEY = '$2a$10$QBi9BI/.1Np6zFQ1Mde./.G1S1QLi.auetF.iFlXyNpCi.Ib3jDaO';
+const SHARED_BIN = '6a2bedb5f5f4af5e29e5db66'; // 共享数据库
 const CLOUDINARY_CLOUD = 'dxftvseub';
 const CLOUDINARY_PRESET = 'color_walking';
 const JSONBIN_API = 'https://api.jsonbin.io/v3';
@@ -17,130 +18,45 @@ let manualLat = null, manualLng = null;
 let markers = [];
 let userColors = {};
 let colorIndex = 0;
-let roomCode = null;
 let nickname = null;
-let binId = null;
 let pollTimer = null;
 const COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf','#ff8b94','#b4a7d6','#ffb347','#87ceeb'];
 
 // ============================================================
-// Room Gate
+// Enter App
 // ============================================================
-async function createRoom() {
-  const nick = document.getElementById('input-nickname').value.trim();
-  if (!nick) { alert('请先输入你的昵称！'); return; }
-  nickname = nick;
-
-  // Generate 6-char room code
-  roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-  // Create a new JSONBin for this room
-  const res = await fetch(`${JSONBIN_API}/b`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Name': `colorwalk-${roomCode}`,
-      'X-Bin-Private': 'false'
-    },
-    body: JSON.stringify({ roomCode, photos: [] })
-  });
-  const data = await res.json();
-  binId = data.metadata.id;
-
-  // Save to localStorage so others can find it by room code
-  // We store a mapping in a fixed "index" bin
-  await registerRoom(roomCode, binId);
-
-  localStorage.setItem('cw_room', roomCode);
-  localStorage.setItem('cw_nick', nickname);
-  localStorage.setItem('cw_bin', binId);
-
-  enterApp();
-}
-
-async function joinRoom() {
-  const nick = document.getElementById('input-nickname').value.trim();
-  const code = document.getElementById('input-room-code').value.trim().toUpperCase();
-  if (!nick) { alert('请先输入你的昵称！'); return; }
-  if (code.length !== 6) { alert('请输入6位房间码！'); return; }
-
-  nickname = nick;
-  roomCode = code;
-
-  // Look up bin id by room code
-  const foundBin = await lookupRoom(code);
-  if (!foundBin) { alert('找不到这个房间，请检查房间码是否正确～'); return; }
-  binId = foundBin;
-
-  localStorage.setItem('cw_room', roomCode);
-  localStorage.setItem('cw_nick', nickname);
-  localStorage.setItem('cw_bin', binId);
-
-  enterApp();
-}
-
-// Register room code → binId in a fixed index bin
-async function registerRoom(code, id) {
-  const INDEX_BIN = '6a2bedb5f5f4af5e29e5db66'; // fixed index bin (pre-created)
-  try {
-    const r = await fetch(`${JSONBIN_API}/b/${INDEX_BIN}`, {
-      headers: { 'X-Master-Key': JSONBIN_KEY }
-    });
-    const d = await r.json();
-    const index = d.record || {};
-    index[code] = id;
-    await fetch(`${JSONBIN_API}/b/${INDEX_BIN}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
-      body: JSON.stringify(index)
-    });
-  } catch(e) {
-    // fallback: store in localStorage only (same device share)
-    localStorage.setItem('cw_index_' + code, id);
-  }
-}
-
-async function lookupRoom(code) {
-  // Try fixed index bin first
-  const INDEX_BIN = '6a2bedb5f5f4af5e29e5db66';
-  try {
-    const r = await fetch(`${JSONBIN_API}/b/${INDEX_BIN}/latest`, {
-      headers: { 'X-Master-Key': JSONBIN_KEY }
-    });
-    const d = await r.json();
-    if (d.record && d.record[code]) return d.record[code];
-  } catch(e) {}
-  // Fallback localStorage
-  return localStorage.getItem('cw_index_' + code);
-}
-
 function enterApp() {
+  const nick = document.getElementById('input-nickname').value.trim();
+  if (!nick) { alert('请先输入你的昵称！'); return; }
+  nickname = nick;
+  localStorage.setItem('cw_nick', nickname);
+
   document.getElementById('room-gate').classList.add('hidden');
   document.getElementById('main-app').classList.remove('hidden');
-  document.getElementById('room-badge-display').textContent = `🏠 房间码：${roomCode}`;
+  document.getElementById('header-nick').textContent = `👋 ${nickname}`;
+
   initMap();
   loadPhotos();
   startPolling();
 }
 
-// Auto-resume session
+// Auto-resume
 window.addEventListener('DOMContentLoaded', () => {
-  const savedRoom = localStorage.getItem('cw_room');
   const savedNick = localStorage.getItem('cw_nick');
-  const savedBin = localStorage.getItem('cw_bin');
-  if (savedRoom && savedNick && savedBin) {
-    roomCode = savedRoom;
+  if (savedNick) {
     nickname = savedNick;
-    binId = savedBin;
     document.getElementById('input-nickname').value = savedNick;
-    document.getElementById('input-room-code').value = savedRoom;
-    enterApp();
+    document.getElementById('room-gate').classList.add('hidden');
+    document.getElementById('main-app').classList.remove('hidden');
+    document.getElementById('header-nick').textContent = `👋 ${nickname}`;
+    initMap();
+    loadPhotos();
+    startPolling();
   }
 });
 
 // ============================================================
-// Polling — refresh photos every 15s
+// Polling
 // ============================================================
 function startPolling() {
   if (pollTimer) clearInterval(pollTimer);
@@ -154,8 +70,7 @@ function initMap() {
   if (map) return;
   map = L.map('map', { zoomControl: true }).setView([31.2304, 121.4737], 13);
   L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-    attribution: '© 高德地图',
-    maxZoom: 18
+    attribution: '© 高德地图', maxZoom: 18
   }).addTo(map);
 }
 
@@ -172,11 +87,10 @@ function addMarker(photo) {
   const color = getUserColor(photo.author);
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);transform:rotate(-45deg);cursor:pointer;">
-      <img src="${photo.url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
+    html: `<div style="width:40px;height:40px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);transform:rotate(-45deg);cursor:pointer;overflow:hidden;">
+      <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
     </div>`,
-    iconSize: [36, 36],
-    iconAnchor: [18, 36]
+    iconSize: [40, 40], iconAnchor: [20, 40]
   });
   const marker = L.marker([photo.lat, photo.lng], { icon }).addTo(map);
   marker.on('click', () => openPhoto(photo));
@@ -195,30 +109,21 @@ function updateLegend() {
 // Load Photos
 // ============================================================
 async function loadPhotos() {
-  if (!binId) return;
   try {
-    const res = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
+    const res = await fetch(`${JSONBIN_API}/b/${SHARED_BIN}/latest`, {
       headers: { 'X-Master-Key': JSONBIN_KEY }
     });
     const data = await res.json();
-    const photos = data.record?.photos || [];
-
-    // Only update if changed
+    const photos = (data.record?.photos) || [];
     if (JSON.stringify(photos) === JSON.stringify(allPhotos)) return;
     allPhotos = photos;
 
-    // Clear markers
-    markers.forEach(m => map.removeLayer(m));
-    markers = [];
-    userColors = {};
-    colorIndex = 0;
-
+    markers.forEach(m => map && map.removeLayer(m));
+    markers = []; userColors = {}; colorIndex = 0;
     allPhotos.forEach(p => addMarker(p));
     updateLegend();
     renderWall();
-  } catch(e) {
-    console.error('加载照片失败', e);
-  }
+  } catch(e) { console.error('加载失败', e); }
 }
 
 // ============================================================
@@ -244,8 +149,6 @@ async function handleFile(event) {
   const file = event.target.files[0];
   if (!file) return;
   currentFile = file;
-
-  // Preview
   const reader = new FileReader();
   reader.onload = e => {
     const img = document.getElementById('preview-img');
@@ -254,11 +157,10 @@ async function handleFile(event) {
   };
   reader.readAsDataURL(file);
 
-  // Try EXIF GPS
   document.getElementById('location-status').textContent = '📍 读取GPS中...';
   try {
     const exif = await exifr.gps(file);
-    if (exif && exif.latitude && exif.longitude) {
+    if (exif && exif.latitude) {
       currentLat = exif.latitude;
       currentLng = exif.longitude;
       document.getElementById('location-status').textContent = `✅ GPS已读取：${currentLat.toFixed(4)}, ${currentLng.toFixed(4)}`;
@@ -266,28 +168,20 @@ async function handleFile(event) {
       return;
     }
   } catch(e) {}
-
-  // No GPS — offer manual
   document.getElementById('location-status').textContent = '📍 未找到GPS，请手动标记位置';
   document.getElementById('btn-manual').classList.remove('hidden');
 }
 
 function enableManualLocation() {
-  const miniMapEl = document.getElementById('mini-map');
-  miniMapEl.classList.remove('hidden');
+  const el = document.getElementById('mini-map');
+  el.classList.remove('hidden');
   document.getElementById('location-status').textContent = '📌 点击地图标记拍摄位置';
-
   if (!miniMap) {
-    const center = [31.2304, 121.4737];
-    miniMap = L.map('mini-map').setView(center, 13);
-    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-      attribution: '© 高德地图'
-    }).addTo(miniMap);
-
+    miniMap = L.map('mini-map').setView([31.2304, 121.4737], 13);
+    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { attribution: '© 高德地图' }).addTo(miniMap);
     let tempMarker = null;
     miniMap.on('click', e => {
-      manualLat = e.latlng.lat;
-      manualLng = e.latlng.lng;
+      manualLat = e.latlng.lat; manualLng = e.latlng.lng;
       if (tempMarker) miniMap.removeLayer(tempMarker);
       tempMarker = L.marker([manualLat, manualLng]).addTo(miniMap);
       document.getElementById('location-status').textContent = `✅ 已标记：${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
@@ -296,16 +190,11 @@ function enableManualLocation() {
 }
 
 function showMiniMap(lat, lng) {
-  const miniMapEl = document.getElementById('mini-map');
-  miniMapEl.classList.remove('hidden');
+  document.getElementById('mini-map').classList.remove('hidden');
   if (!miniMap) {
     miniMap = L.map('mini-map').setView([lat, lng], 15);
-    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
-      attribution: '© 高德地图'
-    }).addTo(miniMap);
-  } else {
-    miniMap.setView([lat, lng], 15);
-  }
+    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', { attribution: '© 高德地图' }).addTo(miniMap);
+  } else { miniMap.setView([lat, lng], 15); }
   L.marker([lat, lng]).addTo(miniMap);
 }
 
@@ -315,57 +204,48 @@ async function publishPhoto() {
   const lng = currentLng || manualLng;
   if (!lat || !lng) { alert('请标记拍摄位置！'); return; }
 
-  const desc = document.getElementById('input-desc').value.trim();
   const btn = document.querySelector('.btn-publish');
-  btn.textContent = '上传中...';
-  btn.disabled = true;
+  btn.textContent = '上传中...'; btn.disabled = true;
 
   try {
-    // Upload to Cloudinary
     const formData = new FormData();
     formData.append('file', currentFile);
     formData.append('upload_preset', CLOUDINARY_PRESET);
     const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
       method: 'POST', body: formData
     });
-    if (!uploadRes.ok) throw new Error('上传失败');
-    const uploadData = await uploadRes.json();
-    const url = uploadData.secure_url;
+    if (!uploadRes.ok) throw new Error('图片上传失败');
+    const { secure_url: url } = await uploadRes.json();
 
-    // Save to JSONBin
     const photo = {
-      id: Date.now(),
-      url,
+      id: Date.now(), url,
       author: nickname,
-      desc,
-      lat,
-      lng,
+      desc: document.getElementById('input-desc').value.trim(),
+      lat, lng,
       time: new Date().toLocaleString('zh-CN')
     };
 
-    const getRes = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
+    const getRes = await fetch(`${JSONBIN_API}/b/${SHARED_BIN}/latest`, {
       headers: { 'X-Master-Key': JSONBIN_KEY }
     });
     const getData = await getRes.json();
     const photos = getData.record?.photos || [];
     photos.push(photo);
 
-    await fetch(`${JSONBIN_API}/b/${binId}`, {
+    await fetch(`${JSONBIN_API}/b/${SHARED_BIN}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
-      body: JSON.stringify({ roomCode, photos })
+      body: JSON.stringify({ photos })
     });
 
     closeUpload();
     await loadPhotos();
     showPage('map');
-    if (map && lat && lng) map.setView([lat, lng], 16);
-
+    if (map) map.setView([lat, lng], 16);
   } catch(e) {
-    alert('发布失败，请重试：' + e.message);
+    alert('发布失败：' + e.message);
   } finally {
-    btn.textContent = '发布 🎉';
-    btn.disabled = false;
+    btn.textContent = '发布 🎉'; btn.disabled = false;
   }
 }
 
@@ -379,8 +259,8 @@ function renderWall() {
     return;
   }
   grid.innerHTML = allPhotos.map(p => `
-    <div class="wall-item" onclick="openPhoto(${JSON.stringify(p).replace(/"/g, '&quot;')})">
-      <img src="${p.url}" loading="lazy" alt="${p.desc || ''}"/>
+    <div class="wall-item" onclick='openPhoto(${JSON.stringify(p)})'>
+      <img src="${p.url}" loading="lazy" alt=""/>
       <div class="wall-item-info">
         <span class="wall-author" style="color:${getUserColor(p.author)}">${p.author}</span>
         <span class="wall-desc">${p.desc || ''}</span>
@@ -391,11 +271,13 @@ function renderWall() {
 
 function generateWall() {
   renderWall();
-  document.querySelector('.btn-gen-wall').textContent = '✅ 已生成！';
-  setTimeout(() => document.querySelector('.btn-gen-wall').textContent = '✨ 生成照片墙', 2000);
+  const btn = document.querySelector('.btn-gen-wall');
+  btn.textContent = '✅ 已生成！';
+  setTimeout(() => btn.textContent = '✨ 生成照片墙', 2000);
 }
 
 function openPhoto(photo) {
+  if (typeof photo === 'string') photo = JSON.parse(photo);
   document.getElementById('detail-img').src = photo.url;
   document.getElementById('detail-author').textContent = photo.author;
   document.getElementById('detail-desc').textContent = photo.desc || '';
@@ -415,16 +297,12 @@ function showPage(name) {
   document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('page-' + name).classList.remove('hidden');
   const tabs = document.querySelectorAll('.tab-btn');
-  if (name === 'map') tabs[0].classList.add('active');
+  if (name === 'map') { tabs[0].classList.add('active'); setTimeout(() => map && map.invalidateSize(), 100); }
   if (name === 'wall') { tabs[1].classList.add('active'); renderWall(); }
-  if (map) setTimeout(() => map.invalidateSize(), 100);
 }
 
-// ============================================================
 // Auto wall at 23:00
-// ============================================================
-function checkAutoWall() {
+setInterval(() => {
   const now = new Date();
   if (now.getHours() === 23 && now.getMinutes() === 0) generateWall();
-}
-setInterval(checkAutoWall, 60000);
+}, 60000);
