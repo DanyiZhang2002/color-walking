@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Color Walking 🎨</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+
+<!-- 顶部导航 -->
+<header class="header">
+  <div class="header-left">
+    <span class="logo">🎨 Color Walking</span>
+    <span class="header-sub">和朋友一起记录世界的颜色</span>
+  </div>
+  <div class="header-right">
+    <button class="tab-btn active" onclick="showPage('map')">🗺️ 地图</button>
+    <button class="tab-btn" onclick="showPage('wall')">🖼️ 照片墙</button>
+    <button class="btn-upload-main" onclick="openUpload()">📸 上传照片</button>
+  </div>
+</header>
+
+<!-- 地图页面 -->
+<div id="page-map" class="page active">
+  <div id="map"></div>
+  <div class="map-legend">
+    <div class="legend-item"><span class="dot" style="background:#ff6b6b"></span> 你的足迹</div>
+    <div class="legend-item"><span class="dot" style="background:#4ecdc4"></span> 朋友足迹</div>
+  </div>
+</div>
+
+<!-- 照片墙页面 -->
+<div id="page-wall" class="page">
+  <div class="wall-header">
+    <h2>🖼️ 今日照片墙</h2>
+    <p class="wall-sub">每天 23:00 自动生成 · <span id="photo-count">0</span> 张照片</p>
+    <button class="btn-generate" onclick="generateWall()">立即生成照片墙</button>
+  </div>
+  <div id="photo-wall" class="photo-wall"></div>
+</div>
+
+<!-- 上传弹窗 -->
+<div id="upload-modal" class="modal-overlay" onclick="closeUpload(event)">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeUploadDirect()">✕</button>
+    <h3>📸 上传照片</h3>
+
+    <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
+      <div class="upload-icon">📷</div>
+      <p>点击拍照或选择照片</p>
+      <p class="upload-sub">支持 JPG、PNG，自动读取GPS位置</p>
+      <input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)" style="display:none">
+    </div>
+
+    <div id="preview-area" style="display:none">
+      <img id="preview-img" src="" alt="预览" class="preview-img"/>
+      <div class="location-info" id="location-info">
+        <span class="loc-icon">📍</span>
+        <span id="loc-text">正在读取位置...</span>
+        <button class="btn-manual-loc" onclick="openManualLocation()">手动标记</button>
+      </div>
+    </div>
+
+    <!-- 手动位置选择 -->
+    <div id="manual-loc-area" style="display:none">
+      <p style="font-size:0.85rem;color:#666;margin-bottom:8px">在地图上点击选择拍摄地点：</p>
+      <div id="mini-map" style="height:200px;border-radius:12px;overflow:hidden"></div>
+      <p id="manual-loc-text" style="font-size:0.8rem;color:#4ecdc4;margin-top:6px;text-align:center"></p>
+    </div>
+
+    <div class="upload-form">
+      <input type="text" id="uploader-name" placeholder="你的名字（如：Cathy）" class="form-input"/>
+      <input type="text" id="photo-caption" placeholder="这一刻的感受... （选填）" class="form-input"/>
+    </div>
+
+    <div id="upload-progress" style="display:none">
+      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+      <p class="progress-text" id="progress-text">上传中...</p>
+    </div>
+
+    <button class="btn-submit" onclick="submitPhoto()" id="submit-btn">🚀 发布到地图</button>
+  </div>
+</div>
+
+<!-- 照片详情弹窗 -->
+<div id="photo-modal" class="modal-overlay" onclick="closePhotoModal(event)">
+  <div class="modal-box photo-detail-box">
+    <button class="modal-close" onclick="closePhotoModalDirect()">✕</button>
+    <img id="detail-img" src="" alt="" class="detail-img"/>
+    <div class="detail-info">
+      <div class="detail-name" id="detail-name"></div>
+      <div class="detail-caption" id="detail-caption"></div>
+      <div class="detail-time" id="detail-time"></div>
+      <div class="detail-loc" id="detail-loc"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
