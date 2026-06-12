@@ -2,9 +2,9 @@
 // Config
 // ============================================================
 const JSONBIN_KEY = '$2a$10$QBi9BI/.1Np6zFQ1Mde./.G1S1QLi.auetF.iFlXyNpCi.Ib3jDaO';
-const JSONBIN_BIN_KEY = 'color_walking_bin_id'; // localStorage key for bin id
 const CLOUDINARY_CLOUD = 'dxftvseub';
-const CLOUDINARY_PRESET = 'color_walking'; // unsigned upload preset (需要在Cloudinary设置)
+const CLOUDINARY_PRESET = 'color_walking';
+const JSONBIN_API = 'https://api.jsonbin.io/v3';
 
 // ============================================================
 // State
@@ -17,21 +17,141 @@ let manualLat = null, manualLng = null;
 let markers = [];
 let userColors = {};
 let colorIndex = 0;
-const COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf','#ff8b94','#b4a7d6'];
+let roomCode = null;
+let nickname = null;
+let binId = null;
+let pollTimer = null;
+const COLORS = ['#ff6b6b','#4ecdc4','#ffe66d','#a8e6cf','#ff8b94','#b4a7d6','#ffb347','#87ceeb'];
 
 // ============================================================
-// Init
+// Room Gate
 // ============================================================
-document.addEventListener('DOMContentLoaded', async () => {
+async function createRoom() {
+  const nick = document.getElementById('input-nickname').value.trim();
+  if (!nick) { alert('请先输入你的昵称！'); return; }
+  nickname = nick;
+
+  // Generate 6-char room code
+  roomCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+  // Create a new JSONBin for this room
+  const res = await fetch(`${JSONBIN_API}/b`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': JSONBIN_KEY,
+      'X-Bin-Name': `colorwalk-${roomCode}`,
+      'X-Bin-Private': 'false'
+    },
+    body: JSON.stringify({ roomCode, photos: [] })
+  });
+  const data = await res.json();
+  binId = data.metadata.id;
+
+  // Save to localStorage so others can find it by room code
+  // We store a mapping in a fixed "index" bin
+  await registerRoom(roomCode, binId);
+
+  localStorage.setItem('cw_room', roomCode);
+  localStorage.setItem('cw_nick', nickname);
+  localStorage.setItem('cw_bin', binId);
+
+  enterApp();
+}
+
+async function joinRoom() {
+  const nick = document.getElementById('input-nickname').value.trim();
+  const code = document.getElementById('input-room-code').value.trim().toUpperCase();
+  if (!nick) { alert('请先输入你的昵称！'); return; }
+  if (code.length !== 6) { alert('请输入6位房间码！'); return; }
+
+  nickname = nick;
+  roomCode = code;
+
+  // Look up bin id by room code
+  const foundBin = await lookupRoom(code);
+  if (!foundBin) { alert('找不到这个房间，请检查房间码是否正确～'); return; }
+  binId = foundBin;
+
+  localStorage.setItem('cw_room', roomCode);
+  localStorage.setItem('cw_nick', nickname);
+  localStorage.setItem('cw_bin', binId);
+
+  enterApp();
+}
+
+// Register room code → binId in a fixed index bin
+async function registerRoom(code, id) {
+  const INDEX_BIN = '6a2bedb5f5f4af5e29e5db66'; // fixed index bin (pre-created)
+  try {
+    const r = await fetch(`${JSONBIN_API}/b/${INDEX_BIN}`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const d = await r.json();
+    const index = d.record || {};
+    index[code] = id;
+    await fetch(`${JSONBIN_API}/b/${INDEX_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify(index)
+    });
+  } catch(e) {
+    // fallback: store in localStorage only (same device share)
+    localStorage.setItem('cw_index_' + code, id);
+  }
+}
+
+async function lookupRoom(code) {
+  // Try fixed index bin first
+  const INDEX_BIN = '6a2bedb5f5f4af5e29e5db66';
+  try {
+    const r = await fetch(`${JSONBIN_API}/b/${INDEX_BIN}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const d = await r.json();
+    if (d.record && d.record[code]) return d.record[code];
+  } catch(e) {}
+  // Fallback localStorage
+  return localStorage.getItem('cw_index_' + code);
+}
+
+function enterApp() {
+  document.getElementById('room-gate').classList.add('hidden');
+  document.getElementById('main-app').classList.remove('hidden');
+  document.getElementById('room-badge-display').textContent = `🏠 房间码：${roomCode}`;
   initMap();
-  await loadPhotos();
-  checkAutoWall();
+  loadPhotos();
+  startPolling();
+}
+
+// Auto-resume session
+window.addEventListener('DOMContentLoaded', () => {
+  const savedRoom = localStorage.getItem('cw_room');
+  const savedNick = localStorage.getItem('cw_nick');
+  const savedBin = localStorage.getItem('cw_bin');
+  if (savedRoom && savedNick && savedBin) {
+    roomCode = savedRoom;
+    nickname = savedNick;
+    binId = savedBin;
+    document.getElementById('input-nickname').value = savedNick;
+    document.getElementById('input-room-code').value = savedRoom;
+    enterApp();
+  }
 });
+
+// ============================================================
+// Polling — refresh photos every 15s
+// ============================================================
+function startPolling() {
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(loadPhotos, 15000);
+}
 
 // ============================================================
 // Map
 // ============================================================
 function initMap() {
+  if (map) return;
   map = L.map('map', { zoomControl: true }).setView([31.2304, 121.4737], 13);
   L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
     attribution: '© 高德地图',
@@ -49,167 +169,75 @@ function getUserColor(name) {
 
 function addMarker(photo) {
   if (!photo.lat || !photo.lng) return;
-  const color = getUserColor(photo.name);
+  const color = getUserColor(photo.author);
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:44px;height:44px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid ${color};overflow:hidden;box-shadow:0 4px 12px rgba(0,0,0,0.5)">
-      <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;transform:rotate(45deg)" />
+    html: `<div style="width:36px;height:36px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 8px rgba(0,0,0,0.3);transform:rotate(-45deg);cursor:pointer;">
+      <img src="${photo.url}" style="width:100%;height:100%;border-radius:50%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
     </div>`,
-    iconSize: [44, 44],
-    iconAnchor: [22, 44]
+    iconSize: [36, 36],
+    iconAnchor: [18, 36]
   });
-
-  const timeStr = new Date(photo.timestamp).toLocaleTimeString('zh-CN', {hour:'2-digit', minute:'2-digit'});
-  const marker = L.marker([photo.lat, photo.lng], {icon}).addTo(map);
-  marker.bindPopup(`
-    <img src="${photo.url}" class="popup-img" onclick="openPhotoDetail('${photo.id}')" />
-    <div class="popup-name">${photo.name}</div>
-    <div class="popup-caption">${photo.caption || ''}</div>
-    <div class="popup-time">${timeStr}</div>
-  `);
+  const marker = L.marker([photo.lat, photo.lng], { icon }).addTo(map);
+  marker.on('click', () => openPhoto(photo));
   markers.push(marker);
 }
 
-function renderAllMarkers() {
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-  allPhotos.forEach(addMarker);
-  if (allPhotos.length > 0 && allPhotos[0].lat) {
-    map.setView([allPhotos[0].lat, allPhotos[0].lng], 14);
-  }
-}
-
-// ============================================================
-// JSONBin - 数据持久化
-// ============================================================
-async function getBinId() {
-  let binId = localStorage.getItem(JSONBIN_BIN_KEY);
-  if (binId) return binId;
-
-  // 创建新bin
-  const res = await fetch('https://api.jsonbin.io/v3/b', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Name': 'color-walking-photos',
-      'X-Bin-Private': 'false'
-    },
-    body: JSON.stringify({ photos: [] })
+function updateLegend() {
+  const legend = document.getElementById('map-legend');
+  legend.innerHTML = '<div class="legend-title">📍 大家的足迹</div>';
+  Object.entries(userColors).forEach(([name, color]) => {
+    legend.innerHTML += `<div class="legend-item"><span class="dot" style="background:${color}"></span>${name}</div>`;
   });
-  const data = await res.json();
-  binId = data.metadata.id;
-  localStorage.setItem(JSONBIN_BIN_KEY, binId);
-  return binId;
 }
 
+// ============================================================
+// Load Photos
+// ============================================================
 async function loadPhotos() {
+  if (!binId) return;
   try {
-    const binId = await getBinId();
-    const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+    const res = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
       headers: { 'X-Master-Key': JSONBIN_KEY }
     });
     const data = await res.json();
-    allPhotos = data.record.photos || [];
-    document.getElementById('photo-count').textContent = allPhotos.length;
-    renderAllMarkers();
+    const photos = data.record?.photos || [];
+
+    // Only update if changed
+    if (JSON.stringify(photos) === JSON.stringify(allPhotos)) return;
+    allPhotos = photos;
+
+    // Clear markers
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+    userColors = {};
+    colorIndex = 0;
+
+    allPhotos.forEach(p => addMarker(p));
+    updateLegend();
     renderWall();
   } catch(e) {
-    console.error('加载失败', e);
+    console.error('加载照片失败', e);
   }
 }
 
-async function savePhotos() {
-  const binId = await getBinId();
-  await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY
-    },
-    body: JSON.stringify({ photos: allPhotos })
-  });
-}
-
 // ============================================================
-// Cloudinary 上传
-// ============================================================
-async function uploadToCloudinary(file, onProgress) {
-  const formData = new FormData();
-  formData.append('file', file);
-  formData.append('upload_preset', CLOUDINARY_PRESET);
-  formData.append('folder', 'color-walking');
-
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 80));
-    };
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const data = JSON.parse(xhr.responseText);
-        resolve(data.secure_url);
-      } else {
-        reject(new Error('上传失败'));
-      }
-    };
-    xhr.onerror = () => reject(new Error('网络错误'));
-    xhr.open('POST', `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`);
-    xhr.send(formData);
-  });
-}
-
-// ============================================================
-// EXIF GPS 读取
-// ============================================================
-function getGPSFromEXIF(file) {
-  return new Promise((resolve) => {
-    EXIF.getData(file, function() {
-      const lat = EXIF.getTag(this, 'GPSLatitude');
-      const latRef = EXIF.getTag(this, 'GPSLatitudeRef');
-      const lng = EXIF.getTag(this, 'GPSLongitude');
-      const lngRef = EXIF.getTag(this, 'GPSLongitudeRef');
-      if (lat && lng) {
-        const toDecimal = (arr) => arr[0] + arr[1]/60 + arr[2]/3600;
-        let latitude = toDecimal(lat);
-        let longitude = toDecimal(lng);
-        if (latRef === 'S') latitude = -latitude;
-        if (lngRef === 'W') longitude = -longitude;
-        resolve({ lat: latitude, lng: longitude });
-      } else {
-        resolve(null);
-      }
-    });
-  });
-}
-
-// ============================================================
-// Upload Modal
+// Upload
 // ============================================================
 function openUpload() {
-  document.getElementById('upload-modal').classList.add('active');
-  resetUploadForm();
+  document.getElementById('upload-modal').classList.remove('hidden');
+  document.getElementById('input-desc').value = '';
+  document.getElementById('preview-img').classList.add('hidden');
+  document.getElementById('preview-img').src = '';
+  document.getElementById('location-status').textContent = '📍 等待读取GPS...';
+  document.getElementById('mini-map').classList.add('hidden');
+  document.getElementById('btn-manual').classList.add('hidden');
+  currentFile = null; currentLat = null; currentLng = null; manualLat = null; manualLng = null;
+  if (miniMap) { miniMap.remove(); miniMap = null; }
 }
 
-function closeUpload(e) {
-  if (e.target === document.getElementById('upload-modal')) closeUploadDirect();
-}
-
-function closeUploadDirect() {
-  document.getElementById('upload-modal').classList.remove('active');
-  resetUploadForm();
-}
-
-function resetUploadForm() {
-  document.getElementById('upload-area').style.display = 'block';
-  document.getElementById('preview-area').style.display = 'none';
-  document.getElementById('manual-loc-area').style.display = 'none';
-  document.getElementById('upload-progress').style.display = 'none';
-  document.getElementById('uploader-name').value = localStorage.getItem('user_name') || '';
-  document.getElementById('photo-caption').value = '';
-  document.getElementById('submit-btn').disabled = false;
-  currentFile = null; currentLat = null; currentLng = null;
-  manualLat = null; manualLng = null;
+function closeUpload() {
+  document.getElementById('upload-modal').classList.add('hidden');
 }
 
 async function handleFile(event) {
@@ -217,151 +245,145 @@ async function handleFile(event) {
   if (!file) return;
   currentFile = file;
 
-  // 预览
+  // Preview
   const reader = new FileReader();
-  reader.onload = (e) => {
-    document.getElementById('preview-img').src = e.target.result;
-    document.getElementById('upload-area').style.display = 'none';
-    document.getElementById('preview-area').style.display = 'block';
+  reader.onload = e => {
+    const img = document.getElementById('preview-img');
+    img.src = e.target.result;
+    img.classList.remove('hidden');
   };
   reader.readAsDataURL(file);
 
-  // 读取EXIF GPS
-  document.getElementById('loc-text').textContent = '正在读取GPS信息...';
-  const gps = await getGPSFromEXIF(file);
-  if (gps) {
-    currentLat = gps.lat;
-    currentLng = gps.lng;
-    document.getElementById('loc-text').textContent = `📍 ${gps.lat.toFixed(4)}, ${gps.lng.toFixed(4)}`;
-  } else {
-    // 尝试浏览器定位
-    document.getElementById('loc-text').textContent = '照片无GPS，尝试获取当前位置...';
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => {
-        currentLat = pos.coords.latitude;
-        currentLng = pos.coords.longitude;
-        document.getElementById('loc-text').textContent = `📍 当前位置 ${currentLat.toFixed(4)}, ${currentLng.toFixed(4)}`;
-      },
-      () => {
-        document.getElementById('loc-text').textContent = '无法自动获取位置，请手动标记';
-      }
-    );
+  // Try EXIF GPS
+  document.getElementById('location-status').textContent = '📍 读取GPS中...';
+  try {
+    const exif = await exifr.gps(file);
+    if (exif && exif.latitude && exif.longitude) {
+      currentLat = exif.latitude;
+      currentLng = exif.longitude;
+      document.getElementById('location-status').textContent = `✅ GPS已读取：${currentLat.toFixed(4)}, ${currentLng.toFixed(4)}`;
+      showMiniMap(currentLat, currentLng);
+      return;
+    }
+  } catch(e) {}
+
+  // No GPS — offer manual
+  document.getElementById('location-status').textContent = '📍 未找到GPS，请手动标记位置';
+  document.getElementById('btn-manual').classList.remove('hidden');
+}
+
+function enableManualLocation() {
+  const miniMapEl = document.getElementById('mini-map');
+  miniMapEl.classList.remove('hidden');
+  document.getElementById('location-status').textContent = '📌 点击地图标记拍摄位置';
+
+  if (!miniMap) {
+    const center = [31.2304, 121.4737];
+    miniMap = L.map('mini-map').setView(center, 13);
+    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+      attribution: '© 高德地图'
+    }).addTo(miniMap);
+
+    let tempMarker = null;
+    miniMap.on('click', e => {
+      manualLat = e.latlng.lat;
+      manualLng = e.latlng.lng;
+      if (tempMarker) miniMap.removeLayer(tempMarker);
+      tempMarker = L.marker([manualLat, manualLng]).addTo(miniMap);
+      document.getElementById('location-status').textContent = `✅ 已标记：${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
+    });
   }
 }
 
-function openManualLocation() {
-  document.getElementById('manual-loc-area').style.display = 'block';
-  setTimeout(() => {
-    if (!miniMap) {
-      const center = currentLat ? [currentLat, currentLng] : [31.2304, 121.4737];
-      miniMap = L.map('mini-map').setView(center, 14);
-      L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {attribution:'© 高德地图'}).addTo(miniMap);
-      let tempMarker;
-      miniMap.on('click', (e) => {
-        manualLat = e.latlng.lat;
-        manualLng = e.latlng.lng;
-        if (tempMarker) miniMap.removeLayer(tempMarker);
-        tempMarker = L.marker([manualLat, manualLng]).addTo(miniMap);
-        document.getElementById('manual-loc-text').textContent = `✅ 已选择：${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
-        document.getElementById('loc-text').textContent = `📍 手动标记 ${manualLat.toFixed(4)}, ${manualLng.toFixed(4)}`;
-      });
-    }
-    miniMap.invalidateSize();
-  }, 100);
+function showMiniMap(lat, lng) {
+  const miniMapEl = document.getElementById('mini-map');
+  miniMapEl.classList.remove('hidden');
+  if (!miniMap) {
+    miniMap = L.map('mini-map').setView([lat, lng], 15);
+    L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+      attribution: '© 高德地图'
+    }).addTo(miniMap);
+  } else {
+    miniMap.setView([lat, lng], 15);
+  }
+  L.marker([lat, lng]).addTo(miniMap);
 }
 
-async function submitPhoto() {
-  const name = document.getElementById('uploader-name').value.trim();
-  if (!name) { alert('请填写你的名字 😊'); return; }
-  if (!currentFile) { alert('请先选择照片'); return; }
+async function publishPhoto() {
+  if (!currentFile) { alert('请先选择照片！'); return; }
+  const lat = currentLat || manualLat;
+  const lng = currentLng || manualLng;
+  if (!lat || !lng) { alert('请标记拍摄位置！'); return; }
 
-  const lat = manualLat || currentLat;
-  const lng = manualLng || currentLng;
-
-  localStorage.setItem('user_name', name);
-
-  document.getElementById('submit-btn').disabled = true;
-  document.getElementById('upload-progress').style.display = 'block';
-
-  const fill = document.getElementById('progress-fill');
-  const text = document.getElementById('progress-text');
+  const desc = document.getElementById('input-desc').value.trim();
+  const btn = document.querySelector('.btn-publish');
+  btn.textContent = '上传中...';
+  btn.disabled = true;
 
   try {
-    text.textContent = '上传照片中...';
-    const url = await uploadToCloudinary(currentFile, (p) => {
-      fill.style.width = p + '%';
+    // Upload to Cloudinary
+    const formData = new FormData();
+    formData.append('file', currentFile);
+    formData.append('upload_preset', CLOUDINARY_PRESET);
+    const uploadRes = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD}/image/upload`, {
+      method: 'POST', body: formData
     });
+    if (!uploadRes.ok) throw new Error('上传失败');
+    const uploadData = await uploadRes.json();
+    const url = uploadData.secure_url;
 
-    fill.style.width = '90%';
-    text.textContent = '保存位置信息...';
-
+    // Save to JSONBin
     const photo = {
-      id: Date.now().toString(),
-      name,
-      caption: document.getElementById('photo-caption').value.trim(),
+      id: Date.now(),
       url,
-      lat, lng,
-      timestamp: new Date().toISOString()
+      author: nickname,
+      desc,
+      lat,
+      lng,
+      time: new Date().toLocaleString('zh-CN')
     };
 
-    allPhotos.unshift(photo);
-    await savePhotos();
+    const getRes = await fetch(`${JSONBIN_API}/b/${binId}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const getData = await getRes.json();
+    const photos = getData.record?.photos || [];
+    photos.push(photo);
 
-    fill.style.width = '100%';
-    text.textContent = '发布成功！🎉';
+    await fetch(`${JSONBIN_API}/b/${binId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify({ roomCode, photos })
+    });
 
-    addMarker(photo);
-    document.getElementById('photo-count').textContent = allPhotos.length;
-    renderWall();
-
-    setTimeout(() => {
-      closeUploadDirect();
-      if (lat && lng) map.setView([lat, lng], 16);
-    }, 1000);
+    closeUpload();
+    await loadPhotos();
+    showPage('map');
+    if (map && lat && lng) map.setView([lat, lng], 16);
 
   } catch(e) {
-    text.textContent = '上传失败，请重试 😢';
-    document.getElementById('submit-btn').disabled = false;
-    console.error(e);
+    alert('发布失败，请重试：' + e.message);
+  } finally {
+    btn.textContent = '发布 🎉';
+    btn.disabled = false;
   }
-}
-
-// ============================================================
-// Photo Detail
-// ============================================================
-function openPhotoDetail(id) {
-  const photo = allPhotos.find(p => p.id === id);
-  if (!photo) return;
-  document.getElementById('detail-img').src = photo.url;
-  document.getElementById('detail-name').textContent = '📸 ' + photo.name;
-  document.getElementById('detail-caption').textContent = photo.caption || '';
-  document.getElementById('detail-time').textContent = new Date(photo.timestamp).toLocaleString('zh-CN');
-  document.getElementById('detail-loc').textContent = photo.lat ? `📍 ${photo.lat.toFixed(4)}, ${photo.lng.toFixed(4)}` : '📍 位置未知';
-  document.getElementById('photo-modal').classList.add('active');
-}
-
-function closePhotoModal(e) {
-  if (e.target === document.getElementById('photo-modal')) closePhotoModalDirect();
-}
-function closePhotoModalDirect() {
-  document.getElementById('photo-modal').classList.remove('active');
 }
 
 // ============================================================
 // Photo Wall
 // ============================================================
 function renderWall() {
-  const wall = document.getElementById('photo-wall');
-  if (allPhotos.length === 0) {
-    wall.innerHTML = '<p style="text-align:center;color:rgba(255,255,255,0.3);margin-top:3rem">还没有照片，快去上传第一张吧 📸</p>';
+  const grid = document.getElementById('wall-grid');
+  if (!allPhotos.length) {
+    grid.innerHTML = '<div class="wall-empty">还没有照片，快去上传吧！📸</div>';
     return;
   }
-  wall.innerHTML = allPhotos.map(photo => `
-    <div class="wall-item" onclick="openPhotoDetail('${photo.id}')">
-      <img src="${photo.url}" alt="${photo.name}" loading="lazy"/>
+  grid.innerHTML = allPhotos.map(p => `
+    <div class="wall-item" onclick="openPhoto(${JSON.stringify(p).replace(/"/g, '&quot;')})">
+      <img src="${p.url}" loading="lazy" alt="${p.desc || ''}"/>
       <div class="wall-item-info">
-        <div class="wall-item-name">${photo.name}</div>
-        ${photo.caption ? `<div class="wall-item-caption">${photo.caption}</div>` : ''}
+        <span class="wall-author" style="color:${getUserColor(p.author)}">${p.author}</span>
+        <span class="wall-desc">${p.desc || ''}</span>
       </div>
     </div>
   `).join('');
@@ -369,40 +391,40 @@ function renderWall() {
 
 function generateWall() {
   renderWall();
-  showPage('wall');
+  document.querySelector('.btn-gen-wall').textContent = '✅ 已生成！';
+  setTimeout(() => document.querySelector('.btn-gen-wall').textContent = '✨ 生成照片墙', 2000);
+}
+
+function openPhoto(photo) {
+  document.getElementById('detail-img').src = photo.url;
+  document.getElementById('detail-author').textContent = photo.author;
+  document.getElementById('detail-desc').textContent = photo.desc || '';
+  document.getElementById('detail-time').textContent = photo.time || '';
+  document.getElementById('photo-modal').classList.remove('hidden');
+}
+
+function closePhoto() {
+  document.getElementById('photo-modal').classList.add('hidden');
 }
 
 // ============================================================
-// 每天23点自动生成照片墙
+// Pages
+// ============================================================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.add('hidden'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('page-' + name).classList.remove('hidden');
+  const tabs = document.querySelectorAll('.tab-btn');
+  if (name === 'map') tabs[0].classList.add('active');
+  if (name === 'wall') { tabs[1].classList.add('active'); renderWall(); }
+  if (map) setTimeout(() => map.invalidateSize(), 100);
+}
+
+// ============================================================
+// Auto wall at 23:00
 // ============================================================
 function checkAutoWall() {
   const now = new Date();
-  const todayKey = now.toDateString();
-  const lastGenerated = localStorage.getItem('wall_generated_date');
-
-  if (now.getHours() >= 23 && lastGenerated !== todayKey) {
-    localStorage.setItem('wall_generated_date', todayKey);
-    generateWall();
-    // 提示
-    const toast = document.createElement('div');
-    toast.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:#4ecdc4;color:#000;padding:0.6rem 1.2rem;border-radius:20px;font-size:0.85rem;font-weight:600;z-index:9999';
-    toast.textContent = '🖼️ 今日照片墙已自动生成！';
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  }
-
-  // 每分钟检查一次
-  setTimeout(checkAutoWall, 60000);
+  if (now.getHours() === 23 && now.getMinutes() === 0) generateWall();
 }
-
-// ============================================================
-// Page Navigation
-// ============================================================
-function showPage(page) {
-  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('page-' + page).classList.add('active');
-  document.querySelector(`[onclick="showPage('${page}')"]`).classList.add('active');
-
-  if (page === 'map') setTimeout(() => map.invalidateSize(), 100);
-}
+setInterval(checkAutoWall, 60000);
