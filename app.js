@@ -71,10 +71,14 @@ function getUserColor(name) {
 function addMarker(photo) {
   if (!photo.lat || !photo.lng) return;
   const color = getUserColor(photo.author);
+  const likes = (photo.likes || []).length;
   const icon = L.divIcon({
     className: '',
-    html: `<div style="width:44px;height:44px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.35);transform:rotate(-45deg);cursor:pointer;overflow:hidden;">
-      <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
+    html: `<div style="position:relative;width:44px;height:44px;">
+      <div style="width:44px;height:44px;border-radius:50% 50% 50% 0;background:${color};border:3px solid white;box-shadow:0 2px 10px rgba(0,0,0,0.35);transform:rotate(-45deg);cursor:pointer;overflow:hidden;">
+        <img src="${photo.url}" style="width:100%;height:100%;object-fit:cover;transform:rotate(45deg);" onerror="this.style.display='none'"/>
+      </div>
+      ${likes > 0 ? `<div style="position:absolute;top:-6px;right:-6px;background:#ff6b6b;border-radius:10px;padding:1px 5px;font-size:10px;color:white;font-weight:700;border:1px solid white;">❤️${likes}</div>` : ''}
     </div>`,
     iconSize: [44, 44], iconAnchor: [22, 44]
   });
@@ -268,10 +272,57 @@ function generateWall() {
 
 function openPhoto(photo) {
   if (typeof photo === 'string') photo = JSON.parse(photo);
-  document.getElementById('detail-img').src = photo.url;
-  document.getElementById('detail-desc').textContent = photo.desc || '';
-  document.getElementById('detail-time').textContent = photo.time || '';
+  // 从 allPhotos 拿最新数据（包含最新点赞）
+  const latest = allPhotos.find(p => p.id === photo.id) || photo;
+  document.getElementById('detail-img').src = latest.url;
+  document.getElementById('detail-desc').textContent = latest.desc || '';
+  document.getElementById('detail-time').textContent = latest.time || '';
+  
+  // 点赞区
+  const likes = latest.likes || [];
+  const hasLiked = likes.includes(nickname);
+  const likeBtn = document.getElementById('detail-like-btn');
+  const likeCount = document.getElementById('detail-like-count');
+  likeBtn.textContent = hasLiked ? '❤️ 已点赞' : '🤍 点个赞';
+  likeBtn.style.opacity = hasLiked ? '0.6' : '1';
+  likeBtn.onclick = () => toggleLike(latest);
+  likeCount.textContent = likes.length > 0 ? `${likes.length} 人觉得很美` : '';
+  
   document.getElementById('photo-modal').classList.remove('hidden');
+}
+
+async function toggleLike(photo) {
+  const idx = allPhotos.findIndex(p => p.id === photo.id);
+  if (idx === -1) return;
+  const likes = [...(allPhotos[idx].likes || [])];
+  const alreadyLiked = likes.includes(nickname);
+  if (alreadyLiked) {
+    likes.splice(likes.indexOf(nickname), 1);
+  } else {
+    likes.push(nickname);
+  }
+  allPhotos[idx].likes = likes;
+  
+  // 更新按钮状态
+  const likeBtn = document.getElementById('detail-like-btn');
+  const likeCount = document.getElementById('detail-like-count');
+  likeBtn.textContent = !alreadyLiked ? '❤️ 已点赞' : '🤍 点个赞';
+  likeBtn.style.opacity = !alreadyLiked ? '0.6' : '1';
+  likeCount.textContent = likes.length > 0 ? `${likes.length} 人觉得很美` : '';
+  
+  // 保存到 JSONBin
+  try {
+    await fetch(`${JSONBIN_API}/b/${SHARED_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify({ photos: allPhotos })
+    });
+    // 刷新地图标记
+    markers.forEach(m => map && map.removeLayer(m));
+    markers = [];
+    allPhotos.forEach(p => addMarker(p));
+    updateLegend();
+  } catch(e) { console.error('点赞失败', e); }
 }
 
 function closePhoto() {
