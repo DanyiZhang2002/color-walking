@@ -3,6 +3,7 @@
 // ============================================================
 const JSONBIN_KEY = '$2a$10$QBi9BI/.1Np6zFQ1Mde./.G1S1QLi.auetF.iFlXyNpCi.Ib3jDaO';
 const SHARED_BIN = '6a2bedb5f5f4af5e29e5db66';
+const CHAT_BIN = '6a2bf192da38895dfeb46918';
 const CLOUDINARY_CLOUD = 'dxftvseub';
 const CLOUDINARY_PRESET = 'color_walking';
 const JSONBIN_API = 'https://api.jsonbin.io/v3';
@@ -289,3 +290,115 @@ setInterval(() => {
   const now = new Date();
   if (now.getHours() === 23 && now.getMinutes() === 0) generateWall();
 }, 60000);
+
+// ============================================================
+// Chat
+// ============================================================
+let chatMessages = [];
+let chatPollTimer = null;
+let chatOpen = false;
+let unreadCount = 0;
+
+function toggleChat() {
+  chatOpen = !chatOpen;
+  const win = document.getElementById('chat-window');
+  const bubble = document.getElementById('chat-bubble');
+  if (chatOpen) {
+    win.classList.remove('hidden');
+    unreadCount = 0;
+    bubble.textContent = '💬';
+    loadMessages();
+    if (!chatPollTimer) chatPollTimer = setInterval(loadMessages, 10000);
+  } else {
+    win.classList.add('hidden');
+  }
+}
+
+async function loadMessages() {
+  try {
+    const res = await fetch(`${JSONBIN_API}/b/${CHAT_BIN}/latest`, {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const data = await res.json();
+    const msgs = data.record?.messages || [];
+    if (JSON.stringify(msgs) === JSON.stringify(chatMessages)) return;
+    const isNew = msgs.length > chatMessages.length;
+    chatMessages = msgs;
+    renderMessages();
+    // Update @to dropdown with known users
+    updateToDropdown();
+    // Unread badge
+    if (isNew && !chatOpen) {
+      unreadCount++;
+      document.getElementById('chat-bubble').textContent = `💬 ${unreadCount}`;
+    }
+  } catch(e) { console.error('chat load fail', e); }
+}
+
+function renderMessages() {
+  const container = document.getElementById('chat-messages');
+  if (!chatMessages.length) {
+    container.innerHTML = '<div class="chat-empty">还没有消息，说点什么吧 🎈</div>';
+    return;
+  }
+  container.innerHTML = chatMessages.map(m => {
+    const isMine = m.author === nickname;
+    const toTag = m.to && m.to !== 'all' ? `<span class="chat-to-tag">@${m.to}</span>` : (m.to === 'all' ? '' : '');
+    const color = getUserColor(m.author);
+    return `<div class="chat-msg ${isMine ? 'mine' : 'theirs'}">
+      ${!isMine ? `<span class="chat-author" style="color:${color}">${m.author}</span>` : ''}
+      <div class="chat-bubble-msg ${isMine ? 'mine' : ''}">  
+        ${toTag}${m.text}
+      </div>
+      <span class="chat-time">${m.time}</span>
+    </div>`;
+  }).join('');
+  container.scrollTop = container.scrollHeight;
+}
+
+function updateToDropdown() {
+  const sel = document.getElementById('chat-to');
+  const current = sel.value;
+  const authors = [...new Set(allPhotos.map(p => p.author).filter(a => a !== nickname))];
+  sel.innerHTML = '<option value="all">📢 @全员</option>' +
+    authors.map(a => `<option value="${a}">@${a}</option>`).join('');
+  sel.value = authors.includes(current) ? current : 'all';
+}
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const to = document.getElementById('chat-to').value;
+
+  const msg = {
+    id: Date.now(),
+    author: nickname,
+    to,
+    text,
+    time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  };
+
+  input.value = '';
+  try {
+    const msgs = [...chatMessages, msg];
+    await fetch(`${JSONBIN_API}/b/${CHAT_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify({ messages: msgs })
+    });
+    chatMessages = msgs;
+    renderMessages();
+  } catch(e) { alert('发送失败'); }
+}
+
+// Enter key to send
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement.id === 'chat-input') sendMessage();
+});
+
+// Start chat polling in background
+setTimeout(() => {
+  chatPollTimer = setInterval(loadMessages, 10000);
+  loadMessages();
+}, 2000);
