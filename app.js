@@ -3,7 +3,7 @@
 // ============================================================
 const JSONBIN_KEY = '$2a$10$QBi9BI/.1Np6zFQ1Mde./.G1S1QLi.auetF.iFlXyNpCi.Ib3jDaO';
 const JSONBIN_BIN_KEY = 'color_walking_bin_id'; // localStorage key for bin id
-const CLOUDINARY_CLOUD = 'Danyi';
+const CLOUDINARY_CLOUD = 'dxftvseub';
 const CLOUDINARY_PRESET = 'color_walking'; // unsigned upload preset (需要在Cloudinary设置)
 
 // ============================================================
