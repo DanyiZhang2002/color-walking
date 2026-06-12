@@ -9,11 +9,35 @@
 </head>
 <body>
 
+<!-- 房间码入口 -->
+<div id="room-gate" class="room-gate">
+  <div class="room-gate-card">
+    <div class="room-gate-logo">🎨</div>
+    <h1 class="room-gate-title">Color Walking</h1>
+    <p class="room-gate-sub">和朋友一起记录世界的颜色</p>
+    <div class="room-gate-name">
+      <label>你的昵称</label>
+      <input id="input-nickname" type="text" placeholder="输入你的名字" maxlength="10"/>
+    </div>
+    <div class="room-gate-buttons">
+      <button class="btn-create-room" onclick="createRoom()">✨ 创建新活动</button>
+      <div class="room-gate-divider">或者</div>
+      <div class="room-join-row">
+        <input id="input-room-code" type="text" placeholder="输入6位房间码" maxlength="6"/>
+        <button class="btn-join-room" onclick="joinRoom()">加入</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 主界面 -->
+<div id="main-app" class="main-app hidden">
+
 <!-- 顶部导航 -->
 <header class="header">
   <div class="header-left">
     <span class="logo">🎨 Color Walking</span>
-    <span class="header-sub">和朋友一起记录世界的颜色</span>
+    <span class="room-badge" id="room-badge-display"></span>
   </div>
   <div class="header-right">
     <button class="tab-btn active" onclick="showPage('map')">🗺️ 地图</button>
@@ -25,81 +49,64 @@
 <!-- 地图页面 -->
 <div id="page-map" class="page active">
   <div id="map"></div>
-  <div class="map-legend">
-    <div class="legend-item"><span class="dot" style="background:#ff6b6b"></span> 你的足迹</div>
-    <div class="legend-item"><span class="dot" style="background:#4ecdc4"></span> 朋友足迹</div>
+  <div class="map-legend" id="map-legend">
+    <div class="legend-title">📍 大家的足迹</div>
   </div>
 </div>
 
 <!-- 照片墙页面 -->
-<div id="page-wall" class="page">
+<div id="page-wall" class="page hidden">
   <div class="wall-header">
     <h2>🖼️ 今日照片墙</h2>
-    <p class="wall-sub">每天 23:00 自动生成 · <span id="photo-count">0</span> 张照片</p>
-    <button class="btn-generate" onclick="generateWall()">立即生成照片墙</button>
+    <button class="btn-gen-wall" onclick="generateWall()">✨ 生成照片墙</button>
   </div>
-  <div id="photo-wall" class="photo-wall"></div>
+  <div id="wall-grid" class="wall-grid"></div>
 </div>
 
 <!-- 上传弹窗 -->
-<div id="upload-modal" class="modal-overlay" onclick="closeUpload(event)">
-  <div class="modal-box">
-    <button class="modal-close" onclick="closeUploadDirect()">✕</button>
-    <h3>📸 上传照片</h3>
-
-    <div class="upload-area" id="upload-area" onclick="document.getElementById('file-input').click()">
-      <div class="upload-icon">📷</div>
-      <p>点击拍照或选择照片</p>
-      <p class="upload-sub">支持 JPG、PNG，自动读取GPS位置</p>
-      <input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)" style="display:none">
+<div id="upload-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3>📸 上传照片</h3>
+      <button class="modal-close" onclick="closeUpload()">✕</button>
     </div>
-
-    <div id="preview-area" style="display:none">
-      <img id="preview-img" src="" alt="预览" class="preview-img"/>
-      <div class="location-info" id="location-info">
-        <span class="loc-icon">📍</span>
-        <span id="loc-text">正在读取位置...</span>
-        <button class="btn-manual-loc" onclick="openManualLocation()">手动标记</button>
-      </div>
+    <div class="upload-preview" id="upload-preview">
+      <label for="file-input" class="upload-area">
+        <span>点击选择照片</span>
+        <span class="upload-hint">支持 JPG / PNG，会自动读取GPS位置</span>
+      </label>
+      <input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)"/>
+      <img id="preview-img" class="preview-img hidden"/>
     </div>
-
-    <!-- 手动位置选择 -->
-    <div id="manual-loc-area" style="display:none">
-      <p style="font-size:0.85rem;color:#666;margin-bottom:8px">在地图上点击选择拍摄地点：</p>
-      <div id="mini-map" style="height:200px;border-radius:12px;overflow:hidden"></div>
-      <p id="manual-loc-text" style="font-size:0.8rem;color:#4ecdc4;margin-top:6px;text-align:center"></p>
+    <div class="upload-location" id="upload-location">
+      <div class="location-status" id="location-status">📍 等待读取GPS...</div>
+      <div id="mini-map" class="mini-map hidden"></div>
+      <button class="btn-manual-location hidden" id="btn-manual" onclick="enableManualLocation()">📌 手动标记位置</button>
     </div>
-
-    <div class="upload-form">
-      <input type="text" id="uploader-name" placeholder="你的名字（如：Cathy）" class="form-input"/>
-      <input type="text" id="photo-caption" placeholder="这一刻的感受... （选填）" class="form-input"/>
+    <div class="upload-desc">
+      <input type="text" id="input-desc" placeholder="描述一下这个瞬间～" maxlength="50"/>
     </div>
-
-    <div id="upload-progress" style="display:none">
-      <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
-      <p class="progress-text" id="progress-text">上传中...</p>
-    </div>
-
-    <button class="btn-submit" onclick="submitPhoto()" id="submit-btn">🚀 发布到地图</button>
+    <button class="btn-publish" onclick="publishPhoto()">发布 🎉</button>
   </div>
 </div>
 
 <!-- 照片详情弹窗 -->
-<div id="photo-modal" class="modal-overlay" onclick="closePhotoModal(event)">
-  <div class="modal-box photo-detail-box">
-    <button class="modal-close" onclick="closePhotoModalDirect()">✕</button>
-    <img id="detail-img" src="" alt="" class="detail-img"/>
+<div id="photo-modal" class="modal hidden">
+  <div class="modal-content photo-detail">
+    <button class="modal-close" onclick="closePhoto()">✕</button>
+    <img id="detail-img" src="" alt=""/>
     <div class="detail-info">
-      <div class="detail-name" id="detail-name"></div>
-      <div class="detail-caption" id="detail-caption"></div>
-      <div class="detail-time" id="detail-time"></div>
-      <div class="detail-loc" id="detail-loc"></div>
+      <span class="detail-author" id="detail-author"></span>
+      <span class="detail-desc" id="detail-desc"></span>
+      <span class="detail-time" id="detail-time"></span>
     </div>
   </div>
 </div>
 
+</div><!-- end main-app -->
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/exif-js/2.3.0/exif.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
