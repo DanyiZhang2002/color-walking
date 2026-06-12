@@ -9,27 +9,10 @@
 </head>
 <body>
 
-<!-- 昵称入口 -->
-<div id="room-gate" class="room-gate">
-  <div class="room-gate-card">
-    <div class="room-gate-logo">🎨</div>
-    <h1 class="room-gate-title">Color Walking</h1>
-    <p class="room-gate-sub">和朋友一起记录世界的颜色</p>
-    <div class="room-gate-name">
-      <label>你的昵称</label>
-      <input id="input-nickname" type="text" placeholder="输入你的名字" maxlength="10"/>
-    </div>
-    <button class="btn-create-room" onclick="enterApp()">开始 🎨</button>
-  </div>
-</div>
-
-<!-- 主界面 -->
-<div id="main-app" class="main-app hidden">
-
 <header class="header">
   <div class="header-left">
     <span class="logo">🎨 Color Walking</span>
-    <span class="header-sub" id="header-nick"></span>
+    <span class="header-sub">和朋友一起记录世界的颜色</span>
   </div>
   <div class="header-right">
     <button class="tab-btn active" onclick="showPage('map')">🗺️ 地图</button>
@@ -62,19 +45,27 @@
       <h3>📸 上传照片</h3>
       <button class="modal-close" onclick="closeUpload()">✕</button>
     </div>
-    <div class="upload-preview">
-      <label for="file-input" class="upload-area">
-        <span>点击选择照片</span>
-        <span class="upload-hint">支持 JPG / PNG，会自动读取GPS位置</span>
+
+    <!-- 两个上传按钮 -->
+    <div class="upload-buttons-row">
+      <label class="upload-btn-option" for="file-camera">
+        📷 拍照
+        <input type="file" id="file-camera" accept="image/*" capture="environment" onchange="handleFile(event)"/>
       </label>
-      <input type="file" id="file-input" accept="image/*" capture="environment" onchange="handleFile(event)"/>
-      <img id="preview-img" class="preview-img hidden"/>
+      <label class="upload-btn-option" for="file-album">
+        🖼️ 从相册选
+        <input type="file" id="file-album" accept="image/*" onchange="handleFile(event)"/>
+      </label>
     </div>
+
+    <img id="preview-img" class="preview-img hidden"/>
+
     <div class="upload-location">
-      <div class="location-status" id="location-status">📍 等待读取GPS...</div>
+      <div class="location-status" id="location-status"></div>
       <div id="mini-map" class="mini-map hidden"></div>
       <button class="btn-manual-location hidden" id="btn-manual" onclick="enableManualLocation()">📌 手动标记位置</button>
     </div>
+
     <div class="upload-desc">
       <input type="text" id="input-desc" placeholder="描述一下这个瞬间～" maxlength="50"/>
     </div>
@@ -88,13 +79,10 @@
     <button class="modal-close" onclick="closePhoto()">✕</button>
     <img id="detail-img" src="" alt=""/>
     <div class="detail-info">
-      <span class="detail-author" id="detail-author"></span>
       <span class="detail-desc" id="detail-desc"></span>
       <span class="detail-time" id="detail-time"></span>
     </div>
   </div>
-</div>
-
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
