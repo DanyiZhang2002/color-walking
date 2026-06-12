@@ -98,6 +98,8 @@ function updateLegend() {
 // ============================================================
 // Load Photos
 // ============================================================
+let openPhotoId = null; // 当前打开的照片ID
+
 async function loadPhotos() {
   try {
     const res = await fetch(`${JSONBIN_API}/b/${SHARED_BIN}/latest`, {
@@ -113,7 +115,29 @@ async function loadPhotos() {
     allPhotos.forEach(p => addMarker(p));
     updateLegend();
     renderWall();
+
+    // 如果弹窗是打开的，刷新点赞和评论
+    if (openPhotoId !== null) {
+      const latest = allPhotos.find(p => p.id === openPhotoId);
+      if (latest) refreshPhotoDetail(latest);
+    }
   } catch(e) { console.error('加载失败', e); }
+}
+
+function refreshPhotoDetail(photo) {
+  // 刷新点赞
+  const likes = photo.likes || [];
+  const hasLiked = likes.includes(nickname);
+  const likeBtn = document.getElementById('detail-like-btn');
+  const likeCount = document.getElementById('detail-like-count');
+  if (likeBtn) {
+    likeBtn.textContent = hasLiked ? '❤️ 已点赞' : '🤍 点个赞';
+    likeBtn.style.opacity = hasLiked ? '0.6' : '1';
+    likeBtn.onclick = () => toggleLike(photo);
+  }
+  if (likeCount) likeCount.textContent = likes.length > 0 ? `${likes.length} 人觉得很美` : '';
+  // 刷新评论
+  renderComments(photo);
 }
 
 // ============================================================
@@ -274,6 +298,7 @@ function openPhoto(photo) {
   if (typeof photo === 'string') photo = JSON.parse(photo);
   // 从 allPhotos 拿最新数据（包含最新点赞）
   const latest = allPhotos.find(p => p.id === photo.id) || photo;
+  openPhotoId = latest.id; // 记录当前打开的照片ID
   document.getElementById('detail-img').src = latest.url;
   document.getElementById('detail-desc').textContent = latest.desc || '';
   document.getElementById('detail-time').textContent = latest.time || '';
@@ -332,6 +357,7 @@ async function toggleLike(photo) {
 
 function closePhoto() {
   document.getElementById('photo-modal').classList.add('hidden');
+  openPhotoId = null;
 }
 
 // ============================================================
