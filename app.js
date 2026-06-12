@@ -287,7 +287,12 @@ function openPhoto(photo) {
   likeBtn.style.opacity = hasLiked ? '0.6' : '1';
   likeBtn.onclick = () => toggleLike(latest);
   likeCount.textContent = likes.length > 0 ? `${likes.length} 人觉得很美` : '';
-  
+
+  // 评论区
+  document.getElementById('comment-input').value = '';
+  document.getElementById('comment-input').dataset.photoId = latest.id;
+  renderComments(latest);
+
   document.getElementById('photo-modal').classList.remove('hidden');
 }
 
@@ -451,6 +456,75 @@ async function sendMessage() {
 // Enter key to send
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.activeElement.id === 'chat-input') sendMessage();
+});
+
+// ============================================================
+// Comments
+// ============================================================
+function renderComments(photo) {
+  const list = document.getElementById('comments-list');
+  const comments = photo.comments || [];
+  if (!comments.length) {
+    list.innerHTML = '<div class="no-comments">还没有评论，来说两句～</div>';
+    return;
+  }
+  list.innerHTML = comments.map(c => {
+    const color = getUserColor(c.author);
+    const isMine = c.author === nickname;
+    return `<div class="comment-item">
+      <span class="comment-author" style="color:${color}">${c.author}</span>
+      <span class="comment-text">${c.text}</span>
+      <span class="comment-time">${c.time}</span>
+      ${isMine ? `<button class="comment-delete" onclick="deleteComment(${photo.id}, ${c.id})">✕</button>` : ''}
+    </div>`;
+  }).join('');
+  list.scrollTop = list.scrollHeight;
+}
+
+async function submitComment() {
+  const input = document.getElementById('comment-input');
+  const text = input.value.trim();
+  if (!text) return;
+  const photoId = Number(input.dataset.photoId);
+  const idx = allPhotos.findIndex(p => p.id === photoId);
+  if (idx === -1) return;
+
+  const comment = {
+    id: Date.now(),
+    author: nickname,
+    text,
+    time: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  };
+  allPhotos[idx].comments = [...(allPhotos[idx].comments || []), comment];
+  input.value = '';
+  renderComments(allPhotos[idx]);
+
+  try {
+    await fetch(`${JSONBIN_API}/b/${SHARED_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify({ photos: allPhotos })
+    });
+  } catch(e) { console.error('评论失败', e); }
+}
+
+async function deleteComment(photoId, commentId) {
+  const idx = allPhotos.findIndex(p => p.id === photoId);
+  if (idx === -1) return;
+  allPhotos[idx].comments = (allPhotos[idx].comments || []).filter(c => c.id !== commentId);
+  renderComments(allPhotos[idx]);
+  try {
+    await fetch(`${JSONBIN_API}/b/${SHARED_BIN}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
+      body: JSON.stringify({ photos: allPhotos })
+    });
+  } catch(e) { console.error('删除评论失败', e); }
+}
+
+// Enter to comment
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement.id === 'comment-input') submitComment();
 });
 
 // Start chat polling in background
