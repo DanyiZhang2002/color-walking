@@ -33,9 +33,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 // ============================================================
 function initMap() {
   map = L.map('map', { zoomControl: true }).setView([31.2304, 121.4737], 13);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '© CartoDB',
-    maxZoom: 19
+  L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {
+    attribution: '© 高德地图',
+    maxZoom: 18
   }).addTo(map);
 }
 
@@ -255,7 +255,7 @@ function openManualLocation() {
     if (!miniMap) {
       const center = currentLat ? [currentLat, currentLng] : [31.2304, 121.4737];
       miniMap = L.map('mini-map').setView(center, 14);
-      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(miniMap);
+      L.tileLayer('https://webrd01.is.autonavi.com/appmaptile?lang=zh_cn&size=1&scale=1&style=8&x={x}&y={y}&z={z}', {attribution:'© 高德地图'}).addTo(miniMap);
       let tempMarker;
       miniMap.on('click', (e) => {
         manualLat = e.latlng.lat;
