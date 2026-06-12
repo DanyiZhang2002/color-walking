@@ -74,6 +74,24 @@
   </div>
 </div>
 
+<!-- 聊天窗口 -->
+<div id="chat-bubble" class="chat-bubble" onclick="toggleChat()">💬</div>
+
+<div id="chat-window" class="chat-window hidden">
+  <div class="chat-header">
+    <span>💬 群聊</span>
+    <button class="chat-close" onclick="toggleChat()">✕</button>
+  </div>
+  <div class="chat-messages" id="chat-messages"></div>
+  <div class="chat-input-area">
+    <select id="chat-to" class="chat-to">
+      <option value="all">📢 @全员</option>
+    </select>
+    <input type="text" id="chat-input" class="chat-input" placeholder="说点什么～" maxlength="100"/>
+    <button class="chat-send" onclick="sendMessage()">发送</button>
+  </div>
+</div>
+
 <!-- 照片详情弹窗 -->
 <div id="photo-modal" class="modal hidden">
   <div class="modal-content photo-detail">
